@@ -8,11 +8,11 @@ const express = require('express');
 const Bottleneck = require('bottleneck');
 const app = express();
 
-const checkCronPattern = getenv('CHECK_CRON_PATTERN', '*/10 * * * * *');
+const checkCronPattern = getenv('CHECK_CRON_PATTERN', '*/30 * * * * *');
 const timeZone = getenv('TZ', 'Europe/Rome');
 
 const amazonBaseUrl = getenv('AMAZON_BASEURL', 'https://www.amazon.it');
-const amazonProductIDs = getenv.array('AMAZON_PRODUCT_IDS', 'string', []);
+const amazonProductIDs = getenv.array('AMAZON_PRODUCT_IDS', 'string');
 const amazonLimiter = new Bottleneck({
   maxConcurrent: getenv.int('AMAZON_MAX_CONCURRENT_REQS', 1),
   minTime: getenv.int('AMAZON_MIN_MS_BETWEEN_REQS', 333)
@@ -23,8 +23,8 @@ const telegramBotToken = getenv('TELEGRAM_BOT_TOKEN');
 const telegramChatId = getenv('TELEGRAM_CHAT_ID');
 
 const redis = new Redis({
-  port: getenv.int('REDIS_PORT', 6379), // Redis port
   host: getenv('REDIS_HOST', '127.0.0.1'), // Redis host
+  port: getenv.int('REDIS_PORT', 6379), // Redis port
   family: getenv.int('REDIS_FAMILY', 4), // 4 (IPv4) or 6 (IPv6)
   password: getenv('REDIS_PASSWORD', '') ? getenv('REDIS_PASSWORD', '') : null,
   db: getenv.int('REDIS_DB', 0)
@@ -62,14 +62,13 @@ async function getAmazonData(productID) {
     title: $('#productTitle').text().trim(),
     availability: $('#availability span').text().trim()
   };
-  debug(`[${productID}] Parsed HTML: ${JSON.stringify(docInfo)}`);
+  debug(`[${productID}] Parsed HTML`);
   return docInfo;
 }
 
 async function checkProduct(productID) {
   try {
     const [docData, docInfo] = await Promise.all([redis.hgetall(productID), getAmazonData(productID)]);
-    debug(`[${productID}] Got doc`);
     debug(`Doc from Redis: ${JSON.stringify(docData)}`);
     debug(`Doc from Amazon: ${JSON.stringify(docInfo)}`);
     if (!docData || (docData && docInfo && docInfo.availability && docData.availability !== docInfo.availability)) {
