@@ -8,6 +8,8 @@ const express = require('express');
 const Bottleneck = require('bottleneck');
 const app = express();
 
+// CONFIGURATION
+
 const nodeEnv = getenv('NODE_ENV', 'production');
 const checkCronEnabled = getenv.bool('CHECK_CRON_ENABLED', true);
 const checkCronPattern = getenv('CHECK_CRON_PATTERN', '*/30 * * * * *');
@@ -37,6 +39,8 @@ const redis = new Redis({
   db: getenv.int('REDIS_DB', 0)
 });
 
+// FUNCTIONS
+
 async function notify(amazonData) {
   debug(`[${amazonData.id}] Notifying...`);
   await axios.get(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
@@ -62,35 +66,35 @@ async function getAmazonData(productID) {
   return amazonData;
 }
 
-async function checkProduct(productID) {
-  try {
-    const [redisData, amazonData] = await Promise.all([redis.hgetall(productID), getAmazonData(productID)]);
-    debug(`[${productID}] Availability from Redis: ${redisData.availability}`);
-    debug(`[${productID}] Availability from Amazon: ${amazonData.availability}`);
-    if (!redisData || (redisData && amazonData && amazonData.availability && redisData.availability !== amazonData.availability)) {
-      debug(`[${productID}] Non existent doc or mismatch.`);
-      await redis.hmset(productID, amazonData);
-      await notify(amazonData);
-    } else { debug(`[${productID}] Noting changed, nothing to do.`); }
-  } catch (error) { debug(error); }
-  return;
+async function checkProducts() {
+  return Promise.all(amazonProductIDs.map(async function checkProduct(productID) {
+    try {
+      const [redisData, amazonData] = await Promise.all([redis.hgetall(productID), getAmazonData(productID)]);
+      debug(`[${productID}] Availability from Redis: ${redisData.availability}`);
+      debug(`[${productID}] Availability from Amazon: ${amazonData.availability}`);
+      if (!redisData || (redisData && amazonData && amazonData.availability && redisData.availability !== amazonData.availability)) {
+        debug(`[${productID}] Non existent doc or mismatch.`);
+        await redis.hmset(productID, amazonData);
+        await notify(amazonData);
+      } else { debug(`[${productID}] Noting changed, nothing to do.`); }
+    } catch (error) { debug(error); }
+    return;
+  }));
 }
-
-async function routineFunction() { return Promise.all(amazonProductIDs.map(checkProduct)); }
 
 app.get('/', async (req, res, next) => {
   const data = await Promise.all(amazonProductIDs.map((id) => redis.hgetall(id)))
   return res.json(data);
 });
 
-app.post('/check', async (req, res, next) => {
+app.post('/checkProducts', async (req, res, next) => {
   res.sendStatus(200);
-  await routineFunction();
+  await checkProducts();
   return;
 })
 
 if (checkCronEnabled) {
-  const job = new CronJob(checkCronPattern, routineFunction, null, true, timeZone);
+  const job = new CronJob(checkCronPattern, checkProducts, null, true, timeZone);
   job.start();
 }
 
@@ -98,6 +102,4 @@ const port = process.env.PORT || 3000;
 app.listen(port);
 console.log('App listenting on port ' + port);
 
-if (nodeEnv === 'development') {
-  routineFunction();
-}
+if (nodeEnv === 'development') checkProducts();
