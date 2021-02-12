@@ -72,7 +72,7 @@ async function checkProduct(productID) {
     debug(`[${productID}] Got doc`);
     debug(`Doc from Redis: ${JSON.stringify(docData)}`);
     debug(`Doc from Amazon: ${JSON.stringify(docInfo)}`);
-    if (!docData || (docData && docData.availability !== docInfo.availability)) {
+    if (!docData || (docData && docInfo && docInfo.availability && docData.availability !== docInfo.availability)) {
       debug(`[${productID}] Non existent doc or mismatch`);
       await redis.hmset(productID, docInfo);
       await notify(docInfo);
