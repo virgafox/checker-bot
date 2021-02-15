@@ -151,23 +151,25 @@ async function checkProducts() {
 }
 
 app.get('/', async (req, res, next) => {
-  const data = await Promise.all(amazonProductIDs.map((id) => redis.hgetall(id)))
-  return res.json(data);
-});
+    const data = await Promise.all(enabledCheckers.map(provider => { 
+      return Promise.all(productIDS[provider].map((id) => redis.hgetall(`${provider}:${id}`)));
+    }));
+    return res.json(data);
+  });
 
-app.post('/checkProducts', async (req, res, next) => {
-  res.sendStatus(200);
-  await checkProducts();
-  return;
-})
+  app.post('/checkProducts', async (req, res, next) => {
+    res.sendStatus(200);
+    await checkProducts();
+    return;
+  })
 
-if (checkCronEnabled) {
-  const job = new CronJob(checkCronPattern, checkProducts, null, true, timeZone);
-  job.start();
-}
+  if (checkCronEnabled) {
+    const job = new CronJob(checkCronPattern, checkProducts, null, true, timeZone);
+    job.start();
+  }
 
-const port = process.env.PORT || 3000;
-app.listen(port);
-console.log('App listenting on port ' + port);
+  const port = process.env.PORT || 3000;
+  app.listen(port);
+  console.log('App listenting on port ' + port);
 
-if (nodeEnv === 'development') checkProducts();
+  if (nodeEnv === 'development') checkProducts();
