@@ -11,9 +11,13 @@ const app = express();
 // CONFIGURATION
 
 const nodeEnv = getenv('NODE_ENV', 'production');
+const telegramBotToken = getenv('TELEGRAM_BOT_TOKEN');
+const telegramChatId = getenv('TELEGRAM_CHAT_ID');
+
 const checkCronEnabled = getenv.bool('CHECK_CRON_ENABLED', true);
-const checkCronPattern = getenv('CHECK_CRON_PATTERN', '*/30 * * * * *');
+const checkCronPattern = getenv('CHECK_CRON_PATTERN', '*/20 * * * * *');
 const timeZone = getenv('TZ', 'Europe/Rome');
+const enabledCheckers = getenv.array('ENABLED_CHECKERS', 'string', []);
 const headers = {
   'Accept': getenv('HEADER_ACCEPT', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'),
   'User-Agent': getenv('HEADER_USERAGENT', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15'),
@@ -39,15 +43,11 @@ const mediaworldLimiter = new Bottleneck({
   minTime: getenv.int('MEDIAWORLD_MIN_MS_BETWEEN_REQS', 333)
 });
 
-const enabledCheckers = getenv.array('ENABLED_CHECKERS', 'string', ['amazon']);
 const productIDS = {
   amazon: getenv.array('AMAZON_PRODUCT_IDS', 'string'),
   unieuro: getenv.array('UNIEURO_PRODUCT_IDS', 'string'),
   mediaworld: getenv.array('MEDIAWORLD_PRODUCT_IDS', 'string'),
 }
-
-const telegramBotToken = getenv('TELEGRAM_BOT_TOKEN');
-const telegramChatId = getenv('TELEGRAM_CHAT_ID');
 
 const redis = new Redis({
   host: getenv('REDIS_HOST', '127.0.0.1'), // Redis host
