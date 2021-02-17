@@ -138,7 +138,7 @@ async function checkProducts() {
 
 app.get('/', async (req, res, next) => {
   const data = await Promise.all(enabledCheckers.map(provider => {
-    return Promise.all(productIDS[provider].map((id) => redis.hgetall(`${provider}:${id}`)));
+    return Promise.all(providers[provider].productIDs.map(productID => redis.hgetall(`${provider}:${productID}`)));
   }));
   return res.json(data);
 });
