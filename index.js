@@ -25,28 +25,51 @@ const headers = {
   'Accept-Encoding': getenv('HEADER_ACCEPT_ENCODING', 'gzip, deflate, br')
 }
 
-const amazonBaseUrl = getenv('AMAZON_BASEURL', 'https://www.amazon.it');
-const amazonLimiter = new Bottleneck({
-  maxConcurrent: getenv.int('AMAZON_MAX_CONCURRENT_REQS', 1),
-  minTime: getenv.int('AMAZON_MIN_MS_BETWEEN_REQS', 333)
-});
-
-const unieuroBaseUrl = getenv('UNIEURO_BASEURL', 'https://www.unieuro.it');
-const unieuroLimiter = new Bottleneck({
-  maxConcurrent: getenv.int('UNIEURO_MAX_CONCURRENT_REQS', 1),
-  minTime: getenv.int('UNIEURO_MIN_MS_BETWEEN_REQS', 333)
-});
-
-const mediaworldBaseUrl = getenv('MEDIAWORLD_BASEURL', 'https://www.mediaworld.it');
-const mediaworldLimiter = new Bottleneck({
-  maxConcurrent: getenv.int('MEDIAWORLD_MAX_CONCURRENT_REQS', 1),
-  minTime: getenv.int('MEDIAWORLD_MIN_MS_BETWEEN_REQS', 333)
-});
-
-const productIDS = {
-  amazon: getenv.array('AMAZON_PRODUCT_IDS', 'string'),
-  unieuro: getenv.array('UNIEURO_PRODUCT_IDS', 'string'),
-  mediaworld: getenv.array('MEDIAWORLD_PRODUCT_IDS', 'string'),
+const providers = {
+  amazon: {
+    baseUrl: getenv('AMAZON_BASEURL', 'https://www.amazon.it/dp'),
+    limiter: new Bottleneck({
+      maxConcurrent: getenv.int('AMAZON_MAX_CONCURRENT_REQS', 1),
+      minTime: getenv.int('AMAZON_MIN_MS_BETWEEN_REQS', 333)
+    }),
+    productIDs: getenv.array('AMAZON_PRODUCT_IDS', 'string', []),
+    maxRedirects: null,
+    findTitle: root => root.querySelector('#productTitle').rawText.trim(),
+    findAvailability: root => root.querySelector('#availability').querySelector('span').firstChild.rawText.trim()
+  },
+  unieuro: {
+    baseUrl: getenv('UNIEURO_BASEURL', 'https://www.unieuro.it/online'),
+    limiter: new Bottleneck({
+      maxConcurrent: getenv.int('UNIEURO_MAX_CONCURRENT_REQS', 1),
+      minTime: getenv.int('UNIEURO_MIN_MS_BETWEEN_REQS', 333)
+    }),
+    productIDs: getenv.array('UNIEURO_PRODUCT_IDS', 'string', []),
+    maxRedirects: null,
+    findTitle: root => root.querySelector('h1.subtitle').rawText.trim(),
+    findAvailability: root => root.querySelector('.product-availability').rawText.trim()
+  },
+  mediaworld: {
+    baseUrl: getenv('MEDIAWORLD_BASEURL', 'https://www.mediaworld.it/product'),
+    limiter: new Bottleneck({
+      maxConcurrent: getenv.int('MEDIAWORLD_MAX_CONCURRENT_REQS', 1),
+      minTime: getenv.int('MEDIAWORLD_MIN_MS_BETWEEN_REQS', 333)
+    }),
+    productIDs: getenv.array('MEDIAWORLD_PRODUCT_IDS', 'string', []),
+    maxRedirects: 0,
+    findTitle: root => root.querySelector('.product-info-wrapper').querySelector('h1').rawText.trim(),
+    findAvailability: root => root.querySelector('.js-add-to-cart').rawText.trim()
+  },
+  euronics: {
+    baseUrl: getenv('EURONICS_BASEURL', 'https://www.euronics.it'),
+    limiter: new Bottleneck({
+      maxConcurrent: getenv.int('EURONICS_MAX_CONCURRENT_REQS', 1),
+      minTime: getenv.int('EURONICS_MIN_MS_BETWEEN_REQS', 333)
+    }),
+    productIDs: getenv.array('EURONICS_PRODUCT_IDS', 'string', []),
+    maxRedirects: null,
+    findTitle: root => root.querySelector('h1.productDetails__name').rawText.trim(),
+    findAvailability: root => root.querySelector('.button--blue.cart__cta').rawText.trim() === 'Aggiungi al carrello' ? 'Disponibile' : 'Non disponibile'
+  }
 }
 
 const redis = new Redis({
@@ -60,83 +83,46 @@ const redis = new Redis({
 // FUNCTIONS
 
 async function notify(siteData) {
-  debug(`[${siteData.provider}][${siteData.id}] Notifying...`);
+  debug(`[${siteData.provider}][${siteData.productID}] Notifying...`);
   await axios.get(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
     params: {
       chat_id: telegramChatId,
       text: `${siteData.title} - ${siteData.availability} - ${siteData.url}`
     }
   });
-  debug(`[${siteData.provider}][${siteData.id}] Notified.`);
+  debug(`[${siteData.provider}][${siteData.productID}] Notified.`);
   return;
 }
 
-const checkers = {
-  amazon: async function getAmazonData(productID) {
-    const url = `${amazonBaseUrl}/dp/${productID}`;
-    debug(`[amazon][${productID}] Checking amazon product: ${url}`);
-    const response = await amazonLimiter.schedule(() => axios.get(url, { headers }));
-    const root = parse(response.data);
-    const siteData = {
-      provider: 'amazon',
-      id: productID,
-      title: root.querySelector('#productTitle').rawText.trim(),
-      availability: root.querySelector('#availability').querySelector('span').firstChild.rawText.trim(),
-      url
-    };
-    debug(`[amazon][${productID}] Parsed HTML.`);
-    return siteData;
-  },
-  unieuro: async function getUnieuroData(productID) {
-    const url = `${unieuroBaseUrl}/online/${productID}`;
-    debug(`[unieuro][${productID}] Checking unieuro product: ${url}`);
-    const response = await unieuroLimiter.schedule(() => axios.get(url, { headers }));
-    const root = parse(response.data);
-    const siteData = {
-      provider: 'unieuro',
-      id: productID,
-      title: root.querySelector('h1.subtitle').rawText.trim(),
-      availability: root.querySelector('.product-availability').rawText.trim(),
-      url
-    };
-    debug(`[unieuro][${productID}] Parsed HTML.`);
-    return siteData;
-  },
-  mediaworld: async function getMediaworldData(productID) {
-    const url = `${mediaworldBaseUrl}/product/${productID}`;
-    debug(`[mediaworld][${productID}] Checking mediaworld product: ${url}`);
-    let siteData;
+async function check({ provider, productID }) {
+  const url = `${providers[provider].baseUrl}/${productID}`;
+  debug(`[${provider}][${productID}] Checking product: ${url}`);
+  let title, availability;
+  try {
+    let response;
     try {
-      const response = await mediaworldLimiter.schedule(() => axios.get(url, { headers, maxRedirects: 0 }));
-      const root = parse(response.data);
-      const title = root.querySelector('.product-info-wrapper').querySelector('h1').rawText.trim();
-      const availability = root.querySelector('.js-add-to-cart').rawText.trim()
-      siteData = {
-        provider: 'mediaworld',
-        id: productID,
-        title,
-        availability: availability === 'Aggiungi al carrello' ? 'Disponibile' : 'Non disponibile',
-        url
-      };
-    } catch (error) {
-      siteData = {
-        provider: 'mediaworld',
-        id: productID,
-        title: 'Prodotto assente',
-        availability: 'Non disponibile',
-        url
-      };
+      response = await providers[provider].limiter.schedule(() => axios.get(url, { headers, maxRedirects: providers[provider].maxRedirects }));
+    } catch (axiosError) {
+      debug(`[${provider}][${productID}] Axios error status: ${axiosError.response.status} `);
+      throw axiosError;
     }
-    debug(`[mediaworld][${productID}] Parsed HTML.`);
-    return siteData;
+    const root = parse(response.data);
+    title = providers[provider].findTitle(root);
+    availability = providers[provider].findAvailability(root);
+  } catch (error) {
+    title = title || 'Prodotto assente';
+    availability = 'Non disponibile';
   }
+  const siteData = { provider, productID, title, availability, url };
+  debug(`[${provider}][${productID}] Parsed HTML.`);
+  return siteData;
 }
 
 async function checkProducts() {
   return Promise.all(enabledCheckers.map(provider => {
-    return Promise.all(productIDS[provider].map(async function (productID) {
+    return Promise.all(providers[provider].productIDs.map(async function (productID) {
       try {
-        const [redisData, siteData] = await Promise.all([redis.hgetall(`${provider}:${productID}`), checkers[provider](productID)]);
+        const [redisData, siteData] = await Promise.all([redis.hgetall(`${provider}:${productID}`), check({ provider, productID })]);
         debug(`[${provider}][${productID}] Availability from redis: ${redisData.availability}`);
         debug(`[${provider}][${productID}] Availability from ${provider}: ${siteData.availability}`);
         if (!redisData || (redisData && siteData && siteData.availability && redisData.availability !== siteData.availability)) {
@@ -151,25 +137,25 @@ async function checkProducts() {
 }
 
 app.get('/', async (req, res, next) => {
-    const data = await Promise.all(enabledCheckers.map(provider => { 
-      return Promise.all(productIDS[provider].map((id) => redis.hgetall(`${provider}:${id}`)));
-    }));
-    return res.json(data);
-  });
+  const data = await Promise.all(enabledCheckers.map(provider => {
+    return Promise.all(productIDS[provider].map((id) => redis.hgetall(`${provider}:${id}`)));
+  }));
+  return res.json(data);
+});
 
-  app.post('/checkProducts', async (req, res, next) => {
-    res.sendStatus(200);
-    await checkProducts();
-    return;
-  })
+app.post('/checkProducts', async (req, res, next) => {
+  res.sendStatus(200);
+  await checkProducts();
+  return;
+})
 
-  if (checkCronEnabled) {
-    const job = new CronJob(checkCronPattern, checkProducts, null, true, timeZone);
-    job.start();
-  }
+if (checkCronEnabled) {
+  const job = new CronJob(checkCronPattern, checkProducts, null, true, timeZone);
+  job.start();
+}
 
-  const port = process.env.PORT || 3000;
-  app.listen(port);
-  console.log('App listenting on port ' + port);
+const port = process.env.PORT || 3000;
+app.listen(port);
+console.log('App listenting on port ' + port);
 
-  if (nodeEnv === 'development') checkProducts();
+if (nodeEnv === 'development') checkProducts();

@@ -13,18 +13,22 @@
 | HEADER_USERAGENT | String | No | safari standard on mac |
 | HEADER_ACCEPT_LANGUAGE | String | No | it-it |
 | HEADER_ACCEPT_ENCODING | String | No | gzip, deflate, br |
-| AMAZON_BASEURL | String | No | https://www.amazon.it |
+| AMAZON_BASEURL | String | No | https://www.amazon.it/dp |
 | AMAZON_MAX_CONCURRENT_REQS | Integer | No | 1 |
 | AMAZON_MIN_MS_BETWEEN_REQS | Integer | No | 333 |
 | AMAZON_PRODUCT_IDS | String | No | - |
-| UNIEURO_BASEURL | String | No | https://www.unieuro.it |
+| UNIEURO_BASEURL | String | No | https://www.unieuro.it/online |
 | UNIEURO_MAX_CONCURRENT_REQS | Integer | No | 1 |
 | UNIEURO_MIN_MS_BETWEEN_REQS | Integer | No | 333 |
 | UNIEURO_PRODUCT_IDS | String | No | - |
-| MEDIAWORLD_BASEURL | String | No | https://www.mediaworld.it |
+| MEDIAWORLD_BASEURL | String | No | https://www.mediaworld.it/product |
 | MEDIAWORLD_MAX_CONCURRENT_REQS | Integer | No | 1 |
 | MEDIAWORLD_MIN_MS_BETWEEN_REQS | Integer | No | 333 |
 | MEDIAWORLD_PRODUCT_IDS | String | No | - |
+| EURONICS_BASEURL | String | No | https://www.euronics.it |
+| EURONICS_MAX_CONCURRENT_REQS | Integer | No | 1 |
+| EURONICS_MIN_MS_BETWEEN_REQS | Integer | No | 333 |
+| EURONICS_PRODUCT_IDS | String | No | - |
 | REDIS_HOST | String | No | 127.0.0.1 | 
 | REDIS_PORT | Integer | No | 6379 | 
 | REDIS_FAMILY | Integer | No | 4 | 
