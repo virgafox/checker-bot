@@ -4,9 +4,8 @@ const { parse } = require('node-html-parser');
 const Redis = require('ioredis');
 const CronJob = require('cron').CronJob;
 const debug = require('debug')('checker');
-const express = require('express');
+const fastify = require('fastify')();
 const Bottleneck = require('bottleneck');
-const app = express();
 
 // CONFIGURATION
 
@@ -82,19 +81,19 @@ const redis = new Redis({
 
 // FUNCTIONS
 
-async function notify(siteData) {
-  debug(`[${siteData.provider}][${siteData.productID}] Notifying...`);
+async function notify({ provider, productID, title, availability, url }) {
+  debug(`[${provider}][${productID}] Notifying...`);
   await axios.get(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
     params: {
       chat_id: telegramChatId,
-      text: `${siteData.title} - ${siteData.availability} - ${siteData.url}`
+      text: `${title} - ${availability} - ${url}`
     }
   });
-  debug(`[${siteData.provider}][${siteData.productID}] Notified.`);
+  debug(`[${provider}][${productID}] Notified.`);
   return;
 }
 
-async function check({ provider, productID }) {
+async function checkProduct({ provider, productID }) {
   const url = `${providers[provider].baseUrl}/${productID}`;
   debug(`[${provider}][${productID}] Checking product: ${url}`);
   let title, availability;
@@ -106,15 +105,20 @@ async function check({ provider, productID }) {
       debug(`[${provider}][${productID}] Axios error status: ${axiosError.response.status} `);
       throw axiosError;
     }
-    const root = parse(response.data);
-    title = providers[provider].findTitle(root);
-    availability = providers[provider].findAvailability(root);
+    try {
+      const root = parse(response.data);
+      title = providers[provider].findTitle(root);
+      availability = providers[provider].findAvailability(root);
+      debug(`[${provider}][${productID}] Parsed HTML.`);
+    } catch (parserError) {
+      debug(`[${provider}][${productID}] Error parsing HTML.`);
+      throw parserError;
+    }
   } catch (error) {
     title = title || 'Prodotto assente';
     availability = 'Non disponibile';
   }
   const siteData = { provider, productID, title, availability, url };
-  debug(`[${provider}][${productID}] Parsed HTML.`);
   return siteData;
 }
 
@@ -122,32 +126,25 @@ async function checkProducts() {
   return Promise.all(enabledCheckers.map(provider => {
     return Promise.all(providers[provider].productIDs.map(async function (productID) {
       try {
-        const [redisData, siteData] = await Promise.all([redis.hgetall(`${provider}:${productID}`), check({ provider, productID })]);
-        debug(`[${provider}][${productID}] Availability from redis: ${redisData.availability}`);
-        debug(`[${provider}][${productID}] Availability from ${provider}: ${siteData.availability}`);
+        const [redisData, siteData] = await Promise.all([redis.hgetall(`${provider}:${productID}`), checkProduct({ provider, productID })]);
+        debug(`[${provider}][${productID}] Old status: "${redisData.availability}", New status: "${siteData.availability}".`);
         if (!redisData || (redisData && siteData && siteData.availability && redisData.availability !== siteData.availability)) {
           debug(`[${provider}][${productID}] Non existent doc or mismatch.`);
           await redis.hmset(`${provider}:${productID}`, siteData);
           await notify(siteData);
-        } else { debug(`[${provider}][${productID}] Noting changed, nothing to do.`); }
+        } else { debug(`[${provider}][${productID}] Nothing changed, nothing to do.`); }
       } catch (error) { debug(error); }
       return;
     }));
-  }))
+  }));
 }
 
-app.get('/', async (req, res, next) => {
+fastify.get('/', async (request, reply) => {
   const data = await Promise.all(enabledCheckers.map(provider => {
     return Promise.all(providers[provider].productIDs.map(productID => redis.hgetall(`${provider}:${productID}`)));
   }));
-  return res.json(data);
+  return data;
 });
-
-app.post('/checkProducts', async (req, res, next) => {
-  res.sendStatus(200);
-  await checkProducts();
-  return;
-})
 
 if (checkCronEnabled) {
   const job = new CronJob(checkCronPattern, checkProducts, null, true, timeZone);
@@ -155,7 +152,14 @@ if (checkCronEnabled) {
 }
 
 const port = process.env.PORT || 3000;
-app.listen(port);
-console.log('App listenting on port ' + port);
+const start = async () => {
+  try {
+    await fastify.listen(port);
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+}
+start();
 
 if (nodeEnv === 'development') checkProducts();
