@@ -118,7 +118,8 @@ async function checkProduct({ provider, productID }) {
     title = title || 'Prodotto assente';
     availability = 'Non disponibile';
   }
-  const siteData = { provider, productID, title, availability, url };
+
+  const siteData = { provider, productID, title, availability: availability.toLowerCase().replace(/\./g, '').trim(), url };
   return siteData;
 }
 
