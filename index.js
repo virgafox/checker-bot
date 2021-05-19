@@ -6,70 +6,11 @@ const CronJob = require('cron').CronJob;
 const debug = require('debug')('checker');
 const fastify = require('fastify')();
 const Bottleneck = require('bottleneck');
+const https = require('https');
 
 // CONFIGURATION
-
-const nodeEnv = getenv('NODE_ENV', 'production');
-const telegramBotToken = getenv('TELEGRAM_BOT_TOKEN');
-const telegramChatId = getenv('TELEGRAM_CHAT_ID');
-
-const checkCronEnabled = getenv.bool('CHECK_CRON_ENABLED', true);
-const checkCronPattern = getenv('CHECK_CRON_PATTERN', '*/20 * * * * *');
+const port = getenv.int('PORT', 3000);
 const timeZone = getenv('TZ', 'Europe/Rome');
-const enabledCheckers = getenv.array('ENABLED_CHECKERS', 'string', []);
-const headers = {
-  'Accept': getenv('HEADER_ACCEPT', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'),
-  'User-Agent': getenv('HEADER_USERAGENT', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15'),
-  'Accept-Language': getenv('HEADER_ACCEPT_LANGUAGE', 'it-it'),
-  'Accept-Encoding': getenv('HEADER_ACCEPT_ENCODING', 'gzip, deflate, br')
-}
-
-const providers = {
-  amazon: {
-    baseUrl: getenv('AMAZON_BASEURL', 'https://www.amazon.it/dp'),
-    limiter: new Bottleneck({
-      maxConcurrent: getenv.int('AMAZON_MAX_CONCURRENT_REQS', 1),
-      minTime: getenv.int('AMAZON_MIN_MS_BETWEEN_REQS', 333)
-    }),
-    productIDs: getenv.array('AMAZON_PRODUCT_IDS', 'string', []),
-    maxRedirects: null,
-    findTitle: root => root.querySelector('#productTitle').rawText.trim(),
-    findAvailability: root => root.querySelector('#availability').querySelector('span').firstChild.rawText.trim()
-  },
-  unieuro: {
-    baseUrl: getenv('UNIEURO_BASEURL', 'https://www.unieuro.it/online'),
-    limiter: new Bottleneck({
-      maxConcurrent: getenv.int('UNIEURO_MAX_CONCURRENT_REQS', 1),
-      minTime: getenv.int('UNIEURO_MIN_MS_BETWEEN_REQS', 333)
-    }),
-    productIDs: getenv.array('UNIEURO_PRODUCT_IDS', 'string', []),
-    maxRedirects: null,
-    findTitle: root => root.querySelector('h1.subtitle').rawText.trim(),
-    findAvailability: root => root.querySelector('.product-availability').rawText.trim()
-  },
-  mediaworld: {
-    baseUrl: getenv('MEDIAWORLD_BASEURL', 'https://www.mediaworld.it/product'),
-    limiter: new Bottleneck({
-      maxConcurrent: getenv.int('MEDIAWORLD_MAX_CONCURRENT_REQS', 1),
-      minTime: getenv.int('MEDIAWORLD_MIN_MS_BETWEEN_REQS', 333)
-    }),
-    productIDs: getenv.array('MEDIAWORLD_PRODUCT_IDS', 'string', []),
-    maxRedirects: 0,
-    findTitle: root => root.querySelector('.product-info-wrapper').querySelector('h1').rawText.trim(),
-    findAvailability: root => root.querySelector('.js-add-to-cart').rawText.trim()
-  },
-  euronics: {
-    baseUrl: getenv('EURONICS_BASEURL', 'https://www.euronics.it'),
-    limiter: new Bottleneck({
-      maxConcurrent: getenv.int('EURONICS_MAX_CONCURRENT_REQS', 1),
-      minTime: getenv.int('EURONICS_MIN_MS_BETWEEN_REQS', 333)
-    }),
-    productIDs: getenv.array('EURONICS_PRODUCT_IDS', 'string', []),
-    maxRedirects: null,
-    findTitle: root => root.querySelector('h1.productDetails__name').rawText.trim(),
-    findAvailability: root => root.querySelector('.button--blue.cart__cta').rawText.trim() === 'Aggiungi al carrello' ? 'Disponibile' : 'Non disponibile'
-  }
-}
 
 const redis = new Redis({
   host: getenv('REDIS_HOST', '127.0.0.1'), // Redis host
@@ -79,88 +20,100 @@ const redis = new Redis({
   db: getenv.int('REDIS_DB', 0)
 });
 
-// FUNCTIONS
+const limiter = new Bottleneck({
+  maxConcurrent: getenv.int(`BOTTLENECK_MAX_CONCURRENT_REQS`, 1),
+  minTime: getenv.int(`BOTTLENECK_MIN_MS_BETWEEN_REQS`, 333)
+});
 
-async function notify({ provider, productID, title, availability, url }) {
-  debug(`[${provider}][${productID}] Notifying...`);
-  await axios.get(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+const headers = {
+  'Accept': getenv('HEADER_ACCEPT', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'),
+  'User-Agent': getenv('HEADER_USERAGENT', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15'),
+  'Accept-Language': getenv('HEADER_ACCEPT_LANGUAGE', 'it-it'),
+  'Accept-Encoding': getenv('HEADER_ACCEPT_ENCODING', 'gzip, deflate, br')
+}
+
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+
+const checkers = getenv.array('CHECKER_NAMES', 'string').map(checkerName => ({
+  name: checkerName,
+  url: getenv(`CHECKER_${checkerName.toUpperCase()}_URL`),
+  maxRedirects: getenv.int(`CHECKER_${checkerName.toUpperCase()}_MAX_REDIRECTS`, 5),
+  cssSelector: getenv(`CHECKER_${checkerName.toUpperCase()}_CSS_SELECTOR`),
+  telegramBotToken: getenv(`CHECKER_${checkerName.toUpperCase()}_TELEGRAM_BOT_TOKEN`, getenv('TELEGRAM_BOT_TOKEN_DEFAULT')),
+  telegramChatId: getenv(`CHECKER_${checkerName.toUpperCase()}_TELEGRAM_CHAT_ID`, getenv('TELEGRAM_CHAT_ID_DEFAULT')),
+  cronPattern: getenv(`CHECKER_${checkerName.toUpperCase()}_CRON_PATTERN`, '*/20 * * * * *'),
+  cronEnabled: getenv.bool(`CHECKER_${checkerName.toUpperCase()}_CRON_ENABLED`, true)
+}));
+
+// FUNCTIONS
+async function notify({ checker, checkResult }) {
+  debug(`[${checker.name}] Notifying...`);
+  await axios.get(`https://api.telegram.org/bot${checker.telegramBotToken}/sendMessage`, {
     params: {
-      chat_id: telegramChatId,
-      text: `${title} - ${availability} - ${url}`
+      chat_id: checker.telegramChatId,
+      text: `Variation detected - ${checker.name} - ${checkResult} - ${checker.url}`
     }
   });
-  debug(`[${provider}][${productID}] Notified.`);
+  debug(`[${checker.name}] Notified.`);
   return;
 }
 
-async function checkProduct({ provider, productID }) {
-  const url = `${providers[provider].baseUrl}/${productID}`;
-  debug(`[${provider}][${productID}] Checking product: ${url}`);
-  let title, availability;
-  try {
-    let response;
-    try {
-      response = await providers[provider].limiter.schedule(() => axios.get(url, { headers, maxRedirects: providers[provider].maxRedirects }));
-    } catch (axiosError) {
-      debug(`[${provider}][${productID}] Axios error status: ${axiosError.response.status} `);
-      throw axiosError;
-    }
-    try {
-      const root = parse(response.data);
-      title = providers[provider].findTitle(root);
-      availability = providers[provider].findAvailability(root);
-      debug(`[${provider}][${productID}] Parsed HTML.`);
-    } catch (parserError) {
-      debug(`[${provider}][${productID}] Error parsing HTML.`);
-      throw parserError;
-    }
-  } catch (error) {
-    title = title || 'Prodotto assente';
-    availability = 'Non disponibile';
-  }
-
-  const siteData = { provider, productID, title, availability: availability.toLowerCase().replace(/\./g, '').trim(), url };
-  return siteData;
+async function getAndParseHTML(checker) {
+  debug(`[${checker.name}] Getting HTML: ${checker.url}`);
+  const response = await limiter.schedule(() => axios.get(checker.url, {
+    headers, maxRedirects: checker.maxRedirects, httpsAgent
+  }));
+  debug(`[${checker.name}] Got HTML, parsing`);
+  const checkResult = parse(response.data).querySelector(checker.cssSelector).text;
+  debug(`[${checker.name}] Parsed HTML`);
+  return checkResult;
 }
 
-async function checkProducts() {
-  return Promise.all(enabledCheckers.map(provider => {
-    return Promise.all(providers[provider].productIDs.map(async function (productID) {
-      try {
-        const [redisData, siteData] = await Promise.all([redis.hgetall(`${provider}:${productID}`), checkProduct({ provider, productID })]);
-        debug(`[${provider}][${productID}] Old status: "${redisData.availability}", New status: "${siteData.availability}".`);
-        if (!redisData || (redisData && siteData && siteData.availability && redisData.availability !== siteData.availability)) {
-          debug(`[${provider}][${productID}] Non existent doc or mismatch.`);
-          await redis.hmset(`${provider}:${productID}`, siteData);
-          await notify(siteData);
-        } else { debug(`[${provider}][${productID}] Nothing changed, nothing to do.`); }
-      } catch (error) { debug(error); }
-      return;
-    }));
-  }));
+async function performCheck(checker) {
+  const [redisData, checkResult] = await Promise.all([
+    redis.hgetall(checker.name),
+    getAndParseHTML(checker)
+  ]);
+  debug(`[${checker.name}] Old value: "${redisData.value}", New value: "${checkResult}".`);
+  if (redisData.value !== checkResult) {
+    debug(`[${checker.name}] Mismatch.`);
+    await Promise.all([
+      notify({ checker, checkResult }),
+      redis.hmset(checker.name, {
+        name: checker.name,
+        value: checkResult,
+        url: checker.url,
+        updatedAt: new Date().toISOString()
+      })
+    ]);
+  } else {
+    debug(`[${checker.name}] Nothing changed, nothing to do.`);
+  }
+  return;
+}
+
+for (let checker of checkers) {
+  if (checker.cronEnabled) {
+    let job = new CronJob(checker.cronPattern, function () {
+      performCheck(checker);
+    }, null, true, timeZone);
+    job.start();
+    debug(`Enabled cron for checker "${checker.name}" with pattern "${checker.cronPattern}"`);
+  }
 }
 
 fastify.get('/', async (request, reply) => {
-  const data = await Promise.all(enabledCheckers.map(provider => {
-    return Promise.all(providers[provider].productIDs.map(productID => redis.hgetall(`${provider}:${productID}`)));
-  }));
+  const data = await Promise.all(checkers.map(checker => redis.hgetall(checker.name)));
   return data;
 });
 
-if (checkCronEnabled) {
-  const job = new CronJob(checkCronPattern, checkProducts, null, true, timeZone);
-  job.start();
-}
-
-const port = process.env.PORT || 3000;
 const start = async () => {
   try {
     await fastify.listen(port);
+    debug(`App listening on port ${port}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
   }
 }
 start();
-
-if (nodeEnv === 'development') checkProducts();
