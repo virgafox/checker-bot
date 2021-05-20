@@ -3,10 +3,15 @@ const axios = require('axios');
 const { parse } = require('node-html-parser');
 const Redis = require('ioredis');
 const CronJob = require('cron').CronJob;
-const debug = require('debug')('checker');
 const fastify = require('fastify')();
 const Bottleneck = require('bottleneck');
 const https = require('https');
+
+const debug = require('debug');
+const debugSystem = debug('checker:system');
+const debugNotifications = debug('checker:notifications');
+const debugHTML = debug('checker:html');
+const debugGeneral = debug('checker:general');
 
 // CONFIGURATION
 const port = getenv.int('PORT', 3000);
@@ -37,35 +42,35 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const checkers = getenv.array('CHECKER_NAMES', 'string').map(checkerName => ({
   name: checkerName,
   url: getenv(`CHECKER_${checkerName.toUpperCase()}_URL`),
-  maxRedirects: getenv.int(`CHECKER_${checkerName.toUpperCase()}_MAX_REDIRECTS`, 5),
   cssSelector: getenv(`CHECKER_${checkerName.toUpperCase()}_CSS_SELECTOR`),
-  telegramBotToken: getenv(`CHECKER_${checkerName.toUpperCase()}_TELEGRAM_BOT_TOKEN`, getenv('TELEGRAM_BOT_TOKEN_DEFAULT')),
-  telegramChatId: getenv(`CHECKER_${checkerName.toUpperCase()}_TELEGRAM_CHAT_ID`, getenv('TELEGRAM_CHAT_ID_DEFAULT')),
+  telegramBotToken: getenv(`CHECKER_${checkerName.toUpperCase()}_TELEGRAM_BOT_TOKEN`),
+  telegramChatId: getenv(`CHECKER_${checkerName.toUpperCase()}_TELEGRAM_CHAT_ID`),
+  maxRedirects: getenv.int(`CHECKER_${checkerName.toUpperCase()}_MAX_REDIRECTS`, 5),
   cronPattern: getenv(`CHECKER_${checkerName.toUpperCase()}_CRON_PATTERN`, '*/20 * * * * *'),
   cronEnabled: getenv.bool(`CHECKER_${checkerName.toUpperCase()}_CRON_ENABLED`, true)
 }));
 
 // FUNCTIONS
 async function notify({ checker, checkResult }) {
-  debug(`[${checker.name}] Notifying...`);
+  debugNotifications(`[${checker.name}] Notifying...`);
   await axios.get(`https://api.telegram.org/bot${checker.telegramBotToken}/sendMessage`, {
     params: {
       chat_id: checker.telegramChatId,
       text: `Variation detected - ${checker.name} - ${checkResult} - ${checker.url}`
     }
   });
-  debug(`[${checker.name}] Notified.`);
+  debugNotifications(`[${checker.name}] Notified.`);
   return;
 }
 
 async function getAndParseHTML(checker) {
-  debug(`[${checker.name}] Getting HTML: ${checker.url}`);
+  debugHTML(`[${checker.name}] Getting HTML: ${checker.url}`);
   const response = await limiter.schedule(() => axios.get(checker.url, {
     headers, maxRedirects: checker.maxRedirects, httpsAgent
   }));
-  debug(`[${checker.name}] Got HTML, parsing`);
+  debugHTML(`[${checker.name}] Got HTML, parsing`);
   const checkResult = parse(response.data).querySelector(checker.cssSelector).text;
-  debug(`[${checker.name}] Parsed HTML`);
+  debugHTML(`[${checker.name}] Parsed HTML`);
   return checkResult;
 }
 
@@ -74,9 +79,9 @@ async function performCheck(checker) {
     redis.hgetall(checker.name),
     getAndParseHTML(checker)
   ]);
-  debug(`[${checker.name}] Old value: "${redisData.value}", New value: "${checkResult}".`);
+  debugGeneral(`[${checker.name}] Old value: "${redisData.value}", New value: "${checkResult}".`);
   if (redisData.value !== checkResult) {
-    debug(`[${checker.name}] Mismatch.`);
+    debugGeneral(`[${checker.name}] Mismatch.`);
     await Promise.all([
       notify({ checker, checkResult }),
       redis.hmset(checker.name, {
@@ -87,7 +92,7 @@ async function performCheck(checker) {
       })
     ]);
   } else {
-    debug(`[${checker.name}] Nothing changed, nothing to do.`);
+    debugGeneral(`[${checker.name}] Nothing changed, nothing to do.`);
   }
   return;
 }
@@ -98,7 +103,7 @@ for (let checker of checkers) {
       performCheck(checker);
     }, null, true, timeZone);
     job.start();
-    debug(`Enabled cron for checker "${checker.name}" with pattern "${checker.cronPattern}"`);
+    debugSystem(`Enabled cron for checker "${checker.name}" with pattern "${checker.cronPattern}"`);
   }
 }
 
@@ -110,7 +115,7 @@ fastify.get('/', async (request, reply) => {
 const start = async () => {
   try {
     await fastify.listen(port);
-    debug(`App listening on port ${port}`);
+    debugSystem(`App listening on port ${port}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

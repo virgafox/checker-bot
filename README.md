@@ -6,14 +6,12 @@ This application periodically checks a portion of a web page for changes, and no
 
 | Variable | Type | Required | Default |
 |:--:|:--:|:--:|:--:|
-| TELEGRAM_BOT_TOKEN_DEFAULT | String | Yes | - |
-| TELEGRAM_CHAT_ID_DEFAULT | String | Yes | - |
 | CHECKER_NAMES | String | Yes | - |
 | CHECKER_$checker-name-uppercase_URL | String | Yes | - |
 | CHECKER_$checker-name-uppercase_CSS_SELECTOR | String | Yes | - |
+| CHECKER_$checker-name-uppercase_TELEGRAM_BOT_TOKEN | String | Yes | - |
+| CHECKER_$checker-name-uppercase_TELEGRAM_CHAT_ID | String | Yes | - |
 | CHECKER_$checker-name-uppercase_MAX_REDIRECTS | String | No | 5 |
-| CHECKER_$checker-name-uppercase_TELEGRAM_BOT_TOKEN | String | No | TELEGRAM_BOT_TOKEN_DEFAULT |
-| CHECKER_$checker-name-uppercase_TELEGRAM_CHAT_ID | String | No | TELEGRAM_CHAT_ID_DEFAULT |
 | CHECKER_$checker-name-uppercase_CRON_PATTERN | String | No | */20 * * * * * |
 | CHECKER_$checker-name-uppercase_CRON_ENABLED | Boolean | No | true |
 | PORT | Integer | No | 3000 | 
