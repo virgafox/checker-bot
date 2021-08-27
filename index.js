@@ -17,13 +17,30 @@ const debugGeneral = debug('checker:general');
 const port = getenv.int('PORT', 3000);
 const timeZone = getenv('TZ', 'Europe/Rome');
 
-const redis = new Redis({
-  host: getenv('REDIS_HOST', '127.0.0.1'), // Redis host
-  port: getenv.int('REDIS_PORT', 6379), // Redis port
-  family: getenv.int('REDIS_FAMILY', 4), // 4 (IPv4) or 6 (IPv6)
-  password: getenv('REDIS_PASSWORD', '') ? getenv('REDIS_PASSWORD', '') : null,
-  db: getenv.int('REDIS_DB', 0)
-});
+let memoryGet, memorySet;
+
+if (getenv.bool('REDIS_ENABLED', false)) {
+  const redis = new Redis({
+    host: getenv('REDIS_HOST', '127.0.0.1'), // Redis host
+    port: getenv.int('REDIS_PORT', 6379), // Redis port
+    family: getenv.int('REDIS_FAMILY', 4), // 4 (IPv4) or 6 (IPv6)
+    password: getenv('REDIS_PASSWORD', '') ? getenv('REDIS_PASSWORD', '') : null,
+    db: getenv.int('REDIS_DB', 0)
+  });
+  memoryGet = async function (checkerName) {
+    return redis.hgetall(checkerName);
+  };
+  memorySet = async function (checkerName, data) {
+    return redis.hmset(checkerName, data);
+  };
+} else {
+  const memoryDict = {}
+  memoryGet = async (key) => memoryDict[key];
+  memorySet = async function (key, value) {
+    memoryDict[key] = value;
+    return;
+  }
+}
 
 const limiter = new Bottleneck({
   maxConcurrent: getenv.int(`BOTTLENECK_MAX_CONCURRENT_REQS`, 1),
@@ -69,26 +86,36 @@ async function getAndParseHTML(checker) {
     headers, maxRedirects: checker.maxRedirects, httpsAgent
   }));
   debugHTML(`[${checker.name}] Got HTML, parsing`);
-  const checkResult = parse(response.data).querySelector(checker.cssSelector).text;
+  const checkResult = parse(response.data, {
+    lowerCaseTagName: false,  // convert tag name to lower case (hurt performance heavily)
+    comment: false,
+    blockTextElements: {
+      script: false,	// keep text content when parsing
+      noscript: false,	// keep text content when parsing
+      style: false,		// keep text content when parsing
+      pre: false			// keep text content when parsing
+    }
+  }).querySelector(checker.cssSelector).removeWhitespace().text;
   debugHTML(`[${checker.name}] Parsed HTML`);
   return checkResult;
 }
 
 async function performCheck(checker) {
-  const [redisData, checkResult] = await Promise.all([
-    redis.hgetall(checker.name),
+  let [oldData, checkResult] = await Promise.all([
+    memoryGet(checker.name),
     getAndParseHTML(checker)
   ]);
-  debugGeneral(`[${checker.name}] Old value: "${redisData.value}", New value: "${checkResult}".`);
-  if (redisData.value !== checkResult) {
+  if (!oldData) oldData = {};
+  debugGeneral(`[${checker.name}] Old value: "${oldData.value}", New value: "${checkResult}".`);
+  if (oldData.value !== checkResult) {
     debugGeneral(`[${checker.name}] Mismatch.`);
     await Promise.all([
       notify({ checker, checkResult }),
-      redis.hmset(checker.name, {
+      memorySet(checker.name, {
         name: checker.name,
         value: checkResult,
-        url: checker.url,
-        updatedAt: new Date().toISOString()
+        lastChangeAt: new Date().toISOString(),
+        checkerConfiguration: JSON.stringify(checker)
       })
     ]);
   } else {
@@ -108,7 +135,11 @@ for (let checker of checkers) {
 }
 
 fastify.get('/', async (request, reply) => {
-  const data = await Promise.all(checkers.map(checker => redis.hgetall(checker.name)));
+  const data = await Promise.all(checkers.map(async checker => {
+    let element = await memoryGet(checker.name);
+    element.checkerConfiguration = JSON.parse(element.checkerConfiguration);
+    return element;
+  }));
   return data;
 });
 

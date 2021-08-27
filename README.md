@@ -18,6 +18,7 @@ This application periodically checks a portion of a web page for changes, and no
 | NODE_ENV | String | No | production |
 | TZ | String | No | Europe/Rome |
 | DEBUG | String | No | - |
+| REDIS_ENABLED | Boolean | No | false | 
 | REDIS_HOST | String | No | 127.0.0.1 | 
 | REDIS_PORT | Integer | No | 6379 | 
 | REDIS_FAMILY | Integer | No | 4 | 
