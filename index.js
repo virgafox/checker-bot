@@ -215,7 +215,8 @@ async function getAndParseHTML(checker) {
     }
   }).querySelector(checker.cssSelector);
   if (!selectedElement) {
-    throw new Error(`Selector not found for checker "${checker.name}" on ${checker.url}: ${checker.cssSelector}`);
+    const sanitizedUrl = new URL(checker.url);
+    throw new Error(`Selector not found for checker "${checker.name}" on ${sanitizedUrl.origin}${sanitizedUrl.pathname}: ${checker.cssSelector}`);
   }
   const checkResult = selectedElement.removeWhitespace().text;
   debugHTML(`[${checker.name}] Parsed HTML`);
@@ -267,7 +268,10 @@ const server = http.createServer(async (req, res) => {
   try {
     const data = await Promise.all(checkers.map(async checker => {
       const element = await memoryGet(checker.name);
-      if (!element || !element.checkerConfiguration) return null;
+      if (!element || !element.checkerConfiguration) {
+        debugSystem(`[${checker.name}] No checker state found in storage yet.`);
+        return null;
+      }
       return {
         ...element,
         checkerConfiguration: JSON.parse(element.checkerConfiguration)

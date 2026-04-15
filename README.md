@@ -16,6 +16,8 @@ External dependencies are kept only for:
 - `ioredis` (optional Redis persistence)
 - `node-html-parser` (HTML parsing + CSS selector querying)
 
+Note: `debug` may still appear in `package-lock.json` as a transitive dependency of `ioredis`, but it is no longer used directly by this application.
+
 ## Environment Variables
 
 | Variable | Type | Required | Default |
