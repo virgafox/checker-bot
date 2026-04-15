@@ -58,11 +58,12 @@ const timeZone = envString('TZ', 'Europe/Rome');
 let memoryGet, memorySet;
 
 if (envBool('REDIS_ENABLED', false)) {
+  const redisPassword = envString('REDIS_PASSWORD', '');
   const redis = new Redis({
     host: envString('REDIS_HOST', '127.0.0.1'),
     port: envInt('REDIS_PORT', 6379),
     family: envInt('REDIS_FAMILY', 4),
-    password: envString('REDIS_PASSWORD', '') ? envString('REDIS_PASSWORD', '') : null,
+    password: redisPassword ? redisPassword : null,
     db: envInt('REDIS_DB', 0)
   });
   memoryGet = async function (checkerName) {
@@ -97,7 +98,7 @@ function processRequestQueue() {
   if (activeRequests >= maxConcurrentRequests || requestQueue.length === 0) return;
   const delayMs = Math.max(0, minMsBetweenRequests - (Date.now() - lastRequestAt));
   setTimeout(async () => {
-    if (activeRequests >= maxConcurrentRequests || requestQueue.length === 0) return processRequestQueue();
+    if (activeRequests >= maxConcurrentRequests || requestQueue.length === 0) return;
     const item = requestQueue.shift();
     activeRequests += 1;
     lastRequestAt = Date.now();
@@ -266,7 +267,7 @@ const server = http.createServer(async (req, res) => {
       };
     }));
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(data.filter(Boolean)));
+    res.end(JSON.stringify(data.filter(item => item !== null)));
   } catch (err) {
     res.statusCode = 500;
     res.end(JSON.stringify({ error: err.message }));
