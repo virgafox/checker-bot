@@ -100,7 +100,7 @@ function processRequestQueue() {
   if (activeRequests >= maxConcurrentRequests || requestQueue.length === 0) return;
   const delayMs = Math.max(0, minMsBetweenRequests - (Date.now() - lastRequestAt));
   queueTimerScheduled = true;
-  setTimeout(async () => {
+  setTimeout(() => {
     queueTimerScheduled = false;
     if (activeRequests >= maxConcurrentRequests || requestQueue.length === 0) {
       processRequestQueue();
@@ -109,15 +109,14 @@ function processRequestQueue() {
     const item = requestQueue.shift();
     activeRequests += 1;
     lastRequestAt = Date.now();
-    try {
-      const result = await item.task();
-      item.resolve(result);
-    } catch (error) {
-      item.reject(error);
-    } finally {
-      activeRequests -= 1;
-      processRequestQueue();
-    }
+    Promise.resolve()
+      .then(() => item.task())
+      .then(result => item.resolve(result))
+      .catch(error => item.reject(error))
+      .finally(() => {
+        activeRequests -= 1;
+        processRequestQueue();
+      });
   }, delayMs);
 }
 
