@@ -2,6 +2,22 @@
 
 This application periodically checks a portion of a web page for changes, and notifies the changes by Telegram.
 
+## Dependencies
+
+The runtime now relies on native Node.js implementations for:
+- HTTP client requests
+- HTTP server
+- environment variable parsing
+- debug logging
+- request throttling
+
+External dependencies are kept only for:
+- `cron` (cron scheduling)
+- `ioredis` (optional Redis persistence)
+- `node-html-parser` (HTML parsing + CSS selector querying)
+
+Note: `debug` may still appear in `package-lock.json` as a transitive dependency of `ioredis`, but it is no longer used directly by this application.
+
 ## Environment Variables
 
 | Variable | Type | Required | Default |
