@@ -86,6 +86,7 @@ const minMsBetweenRequests = envInt('BOTTLENECK_MIN_MS_BETWEEN_REQS', 333);
 let activeRequests = 0;
 let lastRequestAt = 0;
 const requestQueue = [];
+let queueTimerScheduled = false;
 
 function scheduleRequest(task) {
   return new Promise((resolve, reject) => {
@@ -95,10 +96,16 @@ function scheduleRequest(task) {
 }
 
 function processRequestQueue() {
+  if (queueTimerScheduled) return;
   if (activeRequests >= maxConcurrentRequests || requestQueue.length === 0) return;
   const delayMs = Math.max(0, minMsBetweenRequests - (Date.now() - lastRequestAt));
+  queueTimerScheduled = true;
   setTimeout(async () => {
-    if (activeRequests >= maxConcurrentRequests || requestQueue.length === 0) return;
+    queueTimerScheduled = false;
+    if (activeRequests >= maxConcurrentRequests || requestQueue.length === 0) {
+      processRequestQueue();
+      return;
+    }
     const item = requestQueue.shift();
     activeRequests += 1;
     lastRequestAt = Date.now();
@@ -208,7 +215,7 @@ async function getAndParseHTML(checker) {
     }
   }).querySelector(checker.cssSelector);
   if (!selectedElement) {
-    throw new Error(`Selector not found for checker "${checker.name}": ${checker.cssSelector}`);
+    throw new Error(`Selector not found for checker "${checker.name}" on ${checker.url}: ${checker.cssSelector}`);
   }
   const checkResult = selectedElement.removeWhitespace().text;
   debugHTML(`[${checker.name}] Parsed HTML`);
