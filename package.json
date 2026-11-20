@@ -10,7 +10,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "cron": "^1.8.2",
     "ioredis": "^4.22.0",
     "node-html-parser": "^2.1.0"
   }

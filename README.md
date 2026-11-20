@@ -10,9 +10,9 @@ The runtime now relies on native Node.js implementations for:
 - environment variable parsing
 - debug logging
 - request throttling
+- cron scheduling
 
 External dependencies are kept only for:
-- `cron` (cron scheduling)
 - `ioredis` (optional Redis persistence)
 - `node-html-parser` (HTML parsing + CSS selector querying)
 
@@ -45,6 +45,9 @@ Note: `debug` may still appear in `package-lock.json` as a transitive dependency
 | HEADER_USERAGENT | String | No | safari standard on mac |
 | HEADER_ACCEPT_LANGUAGE | String | No | it-it |
 | HEADER_ACCEPT_ENCODING | String | No | gzip, deflate, br |
+
+
+`CRON_PATTERN` uses standard crontab syntax with an optional leading seconds field: `[second] minute hour day-of-month month day-of-week`. Months are 1-12, days of week 0-7 (0 and 7 = Sunday), and `jan`-`dec` / `sun`-`sat` aliases are accepted. Each field supports `*`, lists (`1,15`), ranges (`1-5`) and steps (`*/5`, `10-30/5`). With 5 fields the check runs at second 0. If both day-of-month and day-of-week are restricted, either one matching is enough (as in crontab). Times are evaluated in `TZ`; around DST changes a time inside the skipped hour does not run and one inside the repeated hour runs twice.
 
 `COMPARE_MODE` controls what is compared between checks:
 - `text` (default): only the text content of the selected element. Changes to classes, attributes or tag structure are ignored.
