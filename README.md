@@ -25,6 +25,7 @@ Note: `debug` may still appear in `package-lock.json` as a transitive dependency
 | CHECKER_NAMES | String | Yes | - |
 | CHECKER_$checker-name-uppercase_URL | String | Yes | - |
 | CHECKER_$checker-name-uppercase_CSS_SELECTOR | String | Yes | - |
+| CHECKER_$checker-name-uppercase_COMPARE_MODE | String (`text` \| `html`) | No | text |
 | CHECKER_$checker-name-uppercase_TELEGRAM_BOT_TOKEN | String | Yes | - |
 | CHECKER_$checker-name-uppercase_TELEGRAM_CHAT_ID | String | Yes | - |
 | CHECKER_$checker-name-uppercase_MAX_REDIRECTS | String | No | 5 |
@@ -44,3 +45,9 @@ Note: `debug` may still appear in `package-lock.json` as a transitive dependency
 | HEADER_USERAGENT | String | No | safari standard on mac |
 | HEADER_ACCEPT_LANGUAGE | String | No | it-it |
 | HEADER_ACCEPT_ENCODING | String | No | gzip, deflate, br |
+
+`COMPARE_MODE` controls what is compared between checks:
+- `text` (default): only the text content of the selected element. Changes to classes, attributes or tag structure are ignored.
+- `html`: the full HTML of the selected element (`outerHTML`), so changes to classes, attributes and structure are detected too. Beware of attributes that change on every page load (tokens, random IDs, timestamps): they will trigger a notification on every check. Notifications still show the text content.
+
+Switching mode on an existing checker triggers one notification on the next check, since the stored value changes format.

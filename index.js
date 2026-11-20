@@ -28,6 +28,14 @@ function envBool(name, defaultValue) {
   return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
+function envEnum(name, allowedValues, defaultValue) {
+  const value = envString(name, defaultValue).toLowerCase();
+  if (!allowedValues.includes(value)) {
+    throw new Error(`Invalid value for environment variable ${name}: "${value}" (allowed: ${allowedValues.join(', ')})`);
+  }
+  return value;
+}
+
 function envArray(name) {
   const value = envString(name, undefined, true);
   return value.split(',').map(item => item.trim()).filter(Boolean);
@@ -133,6 +141,7 @@ const checkers = envArray('CHECKER_NAMES').map(checkerName => ({
   name: checkerName,
   url: envString(`CHECKER_${checkerName.toUpperCase()}_URL`, undefined, true),
   cssSelector: envString(`CHECKER_${checkerName.toUpperCase()}_CSS_SELECTOR`, undefined, true),
+  compareMode: envEnum(`CHECKER_${checkerName.toUpperCase()}_COMPARE_MODE`, ['text', 'html'], 'text'),
   telegramBotToken: envString(`CHECKER_${checkerName.toUpperCase()}_TELEGRAM_BOT_TOKEN`, undefined, true),
   telegramChatId: envString(`CHECKER_${checkerName.toUpperCase()}_TELEGRAM_CHAT_ID`, undefined, true),
   maxRedirects: envInt(`CHECKER_${checkerName.toUpperCase()}_MAX_REDIRECTS`, 5),
@@ -187,11 +196,11 @@ async function requestTextWithRedirects(urlString, maxRedirectsAllowed, options 
   }
 }
 
-async function notify({ checker, checkResult }) {
+async function notify({ checker, checkText }) {
   debugNotifications(`[${checker.name}] Notifying...`);
   const telegramUrl = new URL(`https://api.telegram.org/bot${checker.telegramBotToken}/sendMessage`);
   telegramUrl.searchParams.set('chat_id', checker.telegramChatId);
-  telegramUrl.searchParams.set('text', `Variation detected - ${checker.name} - ${checkResult} - ${checker.url}`);
+  telegramUrl.searchParams.set('text', `Variation detected - ${checker.name} - ${checkText} - ${checker.url}`);
   await requestTextWithRedirects(telegramUrl.toString(), 2);
   debugNotifications(`[${checker.name}] Notified.`);
   return;
@@ -217,13 +226,16 @@ async function getAndParseHTML(checker) {
     const sanitizedUrl = new URL(checker.url);
     throw new Error(`Selector not found for checker "${checker.name}" on ${sanitizedUrl.origin}${sanitizedUrl.pathname}: ${checker.cssSelector}`);
   }
-  const checkResult = selectedElement.removeWhitespace().text;
+  selectedElement.removeWhitespace();
+  const text = selectedElement.text;
+  // "html" mode also detects changes to classes, attributes and tag structure.
+  const value = checker.compareMode === 'html' ? selectedElement.outerHTML : text;
   debugHTML(`[${checker.name}] Parsed HTML`);
-  return checkResult;
+  return { value, text };
 }
 
 async function performCheck(checker) {
-  let [oldData, checkResult] = await Promise.all([
+  let [oldData, { value: checkResult, text: checkText }] = await Promise.all([
     memoryGet(checker.name),
     getAndParseHTML(checker)
   ]);
@@ -232,7 +244,7 @@ async function performCheck(checker) {
   if (oldData.value !== checkResult) {
     debugGeneral(`[${checker.name}] Mismatch.`);
     await Promise.all([
-      notify({ checker, checkResult }),
+      notify({ checker, checkText }),
       memorySet(checker.name, {
         name: checker.name,
         value: checkResult,
