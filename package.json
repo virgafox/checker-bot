@@ -1,16 +1,22 @@
 {
   "name": "checker-bot",
   "version": "1.0.0",
-  "description": "",
+  "description": "Periodically checks a portion of a web page and notifies changes on Telegram",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon index.js",
+    "test": "node --test"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "ioredis": "^4.22.0",
     "node-html-parser": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }

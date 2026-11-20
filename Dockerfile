@@ -3,17 +3,20 @@ FROM node:alpine
 # Create app directory
 WORKDIR /usr/src/app
 
-# Install app dependencies
-# A wildcard is used to ensure both package.json AND package-lock.json are copied
-# where available (npm@5+)
+# Install production dependencies only (package-lock.json is required by npm ci)
 COPY package*.json ./
-
-# RUN npm install
-# If you are building your code for production
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 # Bundle app source
-COPY . .
+COPY index.js ./
+COPY src ./src
+
+# Checker state is persisted here, so it survives restarts and image updates.
+# Mount a volume on it, e.g.:
+#   docker run -v checker-bot-data:/data --env-file .env -p 3000:3000 checker-bot
+ENV STATE_FILE=/data/state.json
+RUN mkdir -p /data
+VOLUME /data
 
 EXPOSE 3000
-CMD [ "npm", "start" ]
+CMD [ "node", "index.js" ]

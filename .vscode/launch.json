@@ -8,12 +8,22 @@
             "name": "Launch via nodemon",
             "type": "node",
             "request": "launch",
-            "runtimeExecutable": "nodemon",
+            // Local nodemon from devDependencies (run `npm install` first).
+            "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/nodemon",
             "program": "${workspaceFolder}/index.js",
             "restart": true,
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
             "envFile": "${workspaceFolder}/.env"
-          }
+        },
+        {
+            "name": "Run unit tests",
+            "type": "node",
+            "request": "launch",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": ["test"],
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen"
+        }
     ]
 }
