@@ -4,13 +4,60 @@ on:
   push:
     branches: [master]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # ubuntu-latest ships Google Chrome: the real browser integration test runs too.
+      - run: npm test
+        env:
+          BROWSER_EXECUTABLE_PATH: /usr/bin/google-chrome
+
+  # Pull requests: build the image for amd64 and check that Chromium works inside it, without pushing.
+  verify-image:
+    if: github.event_name == 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: checker-bot:ci
+          cache-from: type=gha
+
+      - name: Render a JavaScript page with the image's Chromium
+        run: |
+          docker run --rm --entrypoint node checker-bot:ci -e "
+            const { createBrowserFetcher } = require('./src/browser');
+            const f = createBrowserFetcher({ executablePath: process.env.BROWSER_EXECUTABLE_PATH, args: process.env.BROWSER_ARGS.split(' ') });
+            f.fetchHtml({ name: 'smoke', url: 'data:text/html,<p id=x></p><script>x.textContent=6*7</script>', waitForSelector: '#x' })
+              .then(html => { console.log(html); if (!html.includes('>42<')) process.exit(1); return f.close(); })
+              .catch(err => { console.error(err); process.exit(1); });
+          "
+
   build:
+    if: github.event_name != 'pull_request'
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read

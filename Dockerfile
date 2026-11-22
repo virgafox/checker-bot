@@ -1,5 +1,18 @@
 FROM node:alpine
 
+# Chromium for checkers with FETCH_MODE=browser (puppeteer-core does not download a browser).
+# tini reaps the Chromium helper processes and forwards signals to node (graceful shutdown).
+# The fonts make text rendered by the browser (and its layout-dependent scripts) realistic.
+RUN apk add --no-cache \
+      chromium \
+      nss \
+      freetype \
+      harfbuzz \
+      ttf-freefont \
+      font-noto-emoji \
+      ca-certificates \
+      tini
+
 # Create app directory
 WORKDIR /usr/src/app
 
@@ -18,5 +31,13 @@ ENV STATE_FILE=/data/state.json
 RUN mkdir -p /data
 VOLUME /data
 
+# The container runs as root, where the Chromium sandbox is not available: --no-sandbox
+# is required. /dev/shm is only 64MB by default in Docker, hence --disable-dev-shm-usage.
+ENV BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    BROWSER_ARGS="--no-sandbox --disable-dev-shm-usage --disable-gpu"
+# Fail the build early if the Alpine package moves the binary.
+RUN "$BROWSER_EXECUTABLE_PATH" --version
+
 EXPOSE 3000
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD [ "node", "index.js" ]

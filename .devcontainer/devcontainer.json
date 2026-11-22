@@ -3,7 +3,7 @@
 {
 	"name": "Node.js",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/javascript-node:5-26-trixie"
+	"image": "mcr.microsoft.com/devcontainers/javascript-node:5-26-trixie",
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
@@ -11,8 +11,12 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 
-	// Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "yarn install",
+	// Chromium for checkers with FETCH_MODE=browser (and the real browser integration test).
+	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends chromium && npm install",
+	"containerEnv": {
+		"BROWSER_EXECUTABLE_PATH": "/usr/bin/chromium",
+		"BROWSER_ARGS": "--no-sandbox --disable-dev-shm-usage"
+	},
 
 	// Configure tool-specific properties.
 	// "customizations": {},
